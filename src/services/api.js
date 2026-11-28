@@ -1,10 +1,16 @@
 
+import { resetToLogin } from "../navigation/NavigationService";
+
 const API_URL = import.meta.env.VITE_API_URL;
 const APP_TOKEN = import.meta.env.VITE_API_APP_TOKEN;
 
 export async function apiRequest(endpoint, options = {}) {
   if (!API_URL) {
-    throw new Error("No se ha configurado VITE_API_URL");
+    throw new Error("No se ha configurado VITE_API_URL.");
+  }
+
+  if (!APP_TOKEN) {
+    throw new Error("No se ha configurado VITE_API_APP_TOKEN.");
   }
 
   const {
@@ -19,17 +25,12 @@ export async function apiRequest(endpoint, options = {}) {
 
   const requestHeaders = new Headers(headers);
 
-  // Token de la aplicación
-  if (APP_TOKEN) {
-    requestHeaders.set("x-api-token", APP_TOKEN);
-  }
+  requestHeaders.set("x-api-token", APP_TOKEN);
 
-  // JWT del usuario
   if (userToken) {
     requestHeaders.set("Authorization", `Bearer ${userToken}`);
   }
 
-  // Tipo de contenido
   if (body !== undefined && !isFormData) {
     requestHeaders.set("Content-Type", "application/json");
   }
@@ -54,6 +55,20 @@ export async function apiRequest(endpoint, options = {}) {
     data = responseText ? JSON.parse(responseText) : null;
   } catch {
     data = responseText;
+  }
+
+  if (response.status === 401) {
+    localStorage.removeItem("accessToken");
+    localStorage.removeItem("user");
+    resetToLogin();
+
+    throw new Error("Tu sesión expiró. Inicia sesión nuevamente.");
+  }
+
+  if (response.status === 403) {
+    throw new Error(
+      data?.message || "No tienes permisos para realizar esta acción."
+    );
   }
 
   if (!response.ok) {

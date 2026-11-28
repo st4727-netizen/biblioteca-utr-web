@@ -31,3 +31,4 @@ dist-ssr
 # Dependencies and build
 node_modules
 dist
+token.txt
