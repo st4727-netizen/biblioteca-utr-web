@@ -12,6 +12,10 @@ export default function Prestamos() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [busqueda, setBusqueda] = useState("");
+  const [devolviendoId, setDevolviendoId] = useState(null);
+  const [mensaje, setMensaje] = useState("");
+
+  const esAdmin = user?.rol === "ADMIN";
 
   const cargarPrestamos = async () => {
     try {
@@ -36,6 +40,44 @@ export default function Prestamos() {
     navigate("/login", { replace: true });
   };
 
+  const registrarDevolucion = async (prestamo) => {
+    const confirmar = window.confirm(
+      `¿Deseas registrar la devolución del libro "${prestamo.libro}"?`
+    );
+
+    if (!confirmar) return;
+
+    const observaciones = window.prompt(
+      "Escribe las observaciones de la devolución:",
+      "Entregado en buen estado"
+    );
+
+    if (observaciones === null) return;
+
+    try {
+      setDevolviendoId(prestamo.loanId);
+      setMensaje("");
+
+      await apiRequest(`/api/loans/books/${prestamo.loanId}/return`, {
+        method: "PATCH",
+        body: {
+          observaciones: observaciones.trim(),
+        },
+      });
+
+      setMensaje("Devolución registrada correctamente.");
+
+      // Consultamos nuevamente para obtener el estado actualizado.
+      await cargarPrestamos();
+    } catch (error) {
+      window.alert(
+        error.message || "No fue posible registrar la devolución."
+      );
+    } finally {
+      setDevolviendoId(null);
+    }
+  };
+
   const prestamosFiltrados = prestamos.filter((prestamo) => {
     const termino = busqueda.toLowerCase();
 
@@ -56,7 +98,8 @@ export default function Prestamos() {
   ).length;
 
   const vencidos = prestamos.filter(
-    (prestamo) => prestamo.vencido === true
+    (prestamo) =>
+      prestamo.estatus === "PRESTADO" && prestamo.vencido === true
   ).length;
 
   const estilos = `
@@ -334,6 +377,35 @@ export default function Prestamos() {
       cursor: pointer;
     }
 
+    .prestamos-devolver {
+      padding: 8px 11px;
+      border: none;
+      border-radius: 5px;
+      background: #16834b;
+      color: white;
+      font-size: 11px;
+      cursor: pointer;
+    }
+
+    .prestamos-devolver:hover {
+      background: #116b3c;
+    }
+
+    .prestamos-devolver:disabled {
+      background: #94a3b8;
+      cursor: not-allowed;
+    }
+
+    .prestamos-alerta {
+      padding: 12px 15px;
+      margin-bottom: 18px;
+      border: 1px solid #b7e4c7;
+      border-radius: 6px;
+      background: #eaf8ef;
+      color: #16834b;
+      font-size: 13px;
+    }
+
     @media (max-width: 1000px) {
       .prestamos-resumen {
         grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -435,7 +507,7 @@ export default function Prestamos() {
             </button>
 
             <button className="activo">
-              ▤ Mis préstamos
+              ▤ {esAdmin ? "Préstamos" : "Mis préstamos"}
             </button>
           </nav>
 
@@ -458,10 +530,11 @@ export default function Prestamos() {
 
           <main className="prestamos-contenido">
             <section className="prestamos-bienvenida">
-              <h1>Mis préstamos</h1>
+              <h1>{esAdmin ? "Gestión de préstamos" : "Mis préstamos"}</h1>
               <p>
-                Consulta el historial y estado de tus préstamos
-                en la Biblioteca UTR.
+                {esAdmin
+                  ? "Consulta y administra los préstamos de la Biblioteca UTR."
+                  : "Consulta el historial y estado de tus préstamos en la Biblioteca UTR."}
               </p>
             </section>
 
@@ -500,6 +573,12 @@ export default function Prestamos() {
                 />
               </div>
 
+              {mensaje && (
+                <div className="prestamos-alerta" role="status">
+                  {mensaje}
+                </div>
+              )}
+
               {prestamosFiltrados.length === 0 ? (
                 <div className="prestamos-mensaje">
                   No se encontraron préstamos.
@@ -515,6 +594,7 @@ export default function Prestamos() {
                         <th>Devolución estimada</th>
                         <th>Estado</th>
                         <th>Vencimiento</th>
+                        {esAdmin && <th>Acciones</th>}
                       </tr>
                     </thead>
 
@@ -562,6 +642,24 @@ export default function Prestamos() {
                               </span>
                             )}
                           </td>
+
+                          {esAdmin && (
+                            <td>
+                              {prestamo.estatus === "PRESTADO" ? (
+                                <button
+                                  className="prestamos-devolver"
+                                  disabled={devolviendoId === prestamo.loanId}
+                                  onClick={() => registrarDevolucion(prestamo)}
+                                >
+                                  {devolviendoId === prestamo.loanId
+                                    ? "Procesando..."
+                                    : "Registrar devolución"}
+                                </button>
+                              ) : (
+                                <span>Sin acciones</span>
+                              )}
+                            </td>
+                          )}
                         </tr>
                       ))}
                     </tbody>
@@ -575,4 +673,3 @@ export default function Prestamos() {
     </>
   );
 }
-

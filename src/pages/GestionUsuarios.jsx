@@ -12,6 +12,10 @@ export default function GestionUsuarios() {
   const [busqueda, setBusqueda] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [mensaje, setMensaje] = useState("");
+  const [usuarioProcesando, setUsuarioProcesando] = useState(null);
+
+  const idAdministrador = user?.id ?? user?._id ?? user?.userId;
 
   const extraerUsuarios = (respuesta) => {
     if (Array.isArray(respuesta)) return respuesta;
@@ -54,6 +58,135 @@ export default function GestionUsuarios() {
     navigate("/login", { replace: true });
   };
 
+  const obtenerId = (usuario) => usuario.id ?? usuario._id;
+
+  const esMiCuenta = (usuario) => {
+    const idUsuario = obtenerId(usuario);
+
+    return (
+      idAdministrador != null &&
+      idUsuario != null &&
+      String(idAdministrador) === String(idUsuario)
+    );
+  };
+
+  const obtenerActivo = (usuario) => {
+    if (typeof usuario.activo === "boolean") {
+      return usuario.activo;
+    }
+
+    if (typeof usuario.active === "boolean") {
+      return usuario.active;
+    }
+
+    return null;
+  };
+
+  const obtenerEstado = (usuario) => {
+    const activo = obtenerActivo(usuario);
+
+    if (activo !== null) {
+      return activo ? "Activo" : "Inactivo";
+    }
+
+    if (usuario.estatus) return usuario.estatus;
+    if (usuario.estado) return usuario.estado;
+
+    return "No disponible";
+  };
+
+  const cambiarRol = async (usuario) => {
+    const id = obtenerId(usuario);
+
+    if (id == null) {
+      setError("No se encontró el identificador del usuario.");
+      return;
+    }
+
+    if (esMiCuenta(usuario)) {
+      setError("No puedes cambiar tu propio rol de administrador.");
+      return;
+    }
+
+    const nuevoRol = usuario.rol === "ADMIN" ? "USER" : "ADMIN";
+
+    const confirmado = window.confirm(
+      `¿Deseas cambiar el rol de ${usuario.nombre} a ${nuevoRol}?`
+    );
+
+    if (!confirmado) return;
+
+    try {
+      setUsuarioProcesando(id);
+      setError("");
+      setMensaje("");
+
+      const respuesta = await apiRequest(`/api/users/${id}/role`, {
+        method: "PATCH",
+        body: {
+          rol: nuevoRol,
+        },
+      });
+
+      await cargarUsuarios();
+
+      setMensaje(
+        respuesta?.message || `El rol se actualizó a ${nuevoRol}.`
+      );
+    } catch (error) {
+      setError(error.message || "No fue posible cambiar el rol.");
+    } finally {
+      setUsuarioProcesando(null);
+    }
+  };
+
+  const cambiarEstado = async (usuario) => {
+    const id = obtenerId(usuario);
+    const activoActual = obtenerActivo(usuario);
+
+    if (id == null) {
+      setError("No se encontró el identificador del usuario.");
+      return;
+    }
+
+    if (activoActual === null) {
+      setError("No se pudo identificar el estado actual de esta cuenta.");
+      return;
+    }
+
+    const nuevoEstado = !activoActual;
+
+    const confirmado = window.confirm(
+      `¿Deseas ${nuevoEstado ? "activar" : "desactivar"} la cuenta de ${usuario.nombre}?`
+    );
+
+    if (!confirmado) return;
+
+    try {
+      setUsuarioProcesando(id);
+      setError("");
+      setMensaje("");
+
+      const respuesta = await apiRequest(`/api/users/${id}/status`, {
+        method: "PATCH",
+        body: {
+          activo: nuevoEstado,
+        },
+      });
+
+      await cargarUsuarios();
+
+      setMensaje(
+        respuesta?.message ||
+          `La cuenta se ${nuevoEstado ? "activó" : "desactivó"} correctamente.`
+      );
+    } catch (error) {
+      setError(error.message || "No fue posible actualizar el estado.");
+    } finally {
+      setUsuarioProcesando(null);
+    }
+  };
+
   const usuariosFiltrados = usuarios.filter((usuario) => {
     const termino = busqueda.toLowerCase();
 
@@ -73,20 +206,9 @@ export default function GestionUsuarios() {
     (usuario) => usuario.rol === "USER"
   ).length;
 
-  const obtenerEstado = (usuario) => {
-    if (typeof usuario.activo === "boolean") {
-      return usuario.activo ? "Activo" : "Inactivo";
-    }
-
-    if (typeof usuario.active === "boolean") {
-      return usuario.active ? "Activo" : "Inactivo";
-    }
-
-    if (usuario.estatus) return usuario.estatus;
-    if (usuario.estado) return usuario.estado;
-
-    return "No disponible";
-  };
+  const activos = usuarios.filter(
+    (usuario) => obtenerActivo(usuario) === true
+  ).length;
 
   const estilos = `
     * {
@@ -232,7 +354,7 @@ export default function GestionUsuarios() {
 
     .usuarios-resumen {
       display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
+      grid-template-columns: repeat(4, minmax(0, 1fr));
       gap: 16px;
       margin-bottom: 25px;
     }
@@ -311,6 +433,12 @@ export default function GestionUsuarios() {
       background: #183f80;
     }
 
+    .usuarios-actualizar:disabled,
+    .usuarios-accion:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
+
     .usuarios-tabla-contenedor {
       width: 100%;
       overflow-x: auto;
@@ -365,6 +493,46 @@ export default function GestionUsuarios() {
       color: #c43c3c;
     }
 
+    .usuarios-acciones {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+    }
+
+    .usuarios-accion {
+      padding: 8px 10px;
+      border: none;
+      border-radius: 5px;
+      color: white;
+      font-size: 11px;
+      cursor: pointer;
+    }
+
+    .usuarios-accion-rol {
+      background: #2456a5;
+    }
+
+    .usuarios-accion-rol:hover {
+      background: #183f80;
+    }
+
+    .usuarios-accion-estado {
+      background: #c43c3c;
+    }
+
+    .usuarios-accion-estado.activar {
+      background: #16834b;
+    }
+
+    .usuarios-accion-estado:hover {
+      filter: brightness(0.9);
+    }
+
+    .usuarios-propio {
+      color: #94a3b8;
+      font-size: 11px;
+    }
+
     .usuarios-mensaje {
       padding: 25px;
       border-radius: 8px;
@@ -384,7 +552,17 @@ export default function GestionUsuarios() {
       font-size: 13px;
     }
 
-    @media (max-width: 900px) {
+    .usuarios-exito {
+      margin-bottom: 18px;
+      padding: 13px 16px;
+      border: 1px solid #b9e8cc;
+      border-radius: 7px;
+      background: #eaf8ef;
+      color: #16834b;
+      font-size: 13px;
+    }
+
+    @media (max-width: 1100px) {
       .usuarios-resumen {
         grid-template-columns: repeat(2, minmax(0, 1fr));
       }
@@ -435,6 +613,11 @@ export default function GestionUsuarios() {
 
       .usuarios-busqueda {
         width: 100%;
+      }
+
+      .usuarios-acciones {
+        flex-direction: column;
+        align-items: stretch;
       }
     }
   `;
@@ -489,8 +672,8 @@ export default function GestionUsuarios() {
             <section className="usuarios-bienvenida">
               <h1>Gestión de usuarios</h1>
               <p>
-                Consulta los usuarios registrados y sus roles
-                dentro de la Biblioteca UTR.
+                Consulta los usuarios registrados y administra sus roles
+                y estados dentro de la Biblioteca UTR.
               </p>
             </section>
 
@@ -508,6 +691,11 @@ export default function GestionUsuarios() {
               <div className="usuarios-card">
                 <span>Alumnos</span>
                 <strong>{loading ? "..." : alumnos}</strong>
+              </div>
+
+              <div className="usuarios-card">
+                <span>Usuarios activos</span>
+                <strong>{loading ? "..." : activos}</strong>
               </div>
             </section>
 
@@ -527,7 +715,7 @@ export default function GestionUsuarios() {
                   <button
                     className="usuarios-actualizar"
                     onClick={cargarUsuarios}
-                    disabled={loading}
+                    disabled={loading || usuarioProcesando !== null}
                   >
                     Actualizar
                   </button>
@@ -537,6 +725,12 @@ export default function GestionUsuarios() {
               {error && (
                 <div className="usuarios-error" role="alert">
                   {error}
+                </div>
+              )}
+
+              {mensaje && (
+                <div className="usuarios-exito" role="status">
+                  {mensaje}
                 </div>
               )}
 
@@ -558,15 +752,22 @@ export default function GestionUsuarios() {
                         <th>Correo electrónico</th>
                         <th>Rol</th>
                         <th>Estado</th>
+                        <th>Acciones</th>
                       </tr>
                     </thead>
 
                     <tbody>
                       {usuariosFiltrados.map((usuario, indice) => {
                         const estado = obtenerEstado(usuario);
+                        const activo = obtenerActivo(usuario);
+                        const miCuenta = esMiCuenta(usuario);
+                        const id = obtenerId(usuario);
+                        const procesando =
+                          usuarioProcesando !== null &&
+                          String(usuarioProcesando) === String(id);
 
                         return (
-                          <tr key={usuario.id || usuario._id || indice}>
+                          <tr key={id ?? indice}>
                             <td>
                               <strong>
                                 {usuario.nombre || "Sin nombre"}
@@ -595,6 +796,53 @@ export default function GestionUsuarios() {
                               >
                                 {estado}
                               </span>
+                            </td>
+
+                            <td>
+                              <div className="usuarios-acciones">
+                                {miCuenta ? (
+                                  <span className="usuarios-propio">
+                                    Tu cuenta
+                                  </span>
+                                ) : (
+                                  <>
+                                    <button
+                                      className="usuarios-accion usuarios-accion-rol"
+                                      onClick={() => cambiarRol(usuario)}
+                                      disabled={
+                                        procesando ||
+                                        usuarioProcesando !== null
+                                      }
+                                      title="Cambiar rol del usuario"
+                                    >
+                                      {procesando
+                                        ? "Procesando..."
+                                        : usuario.rol === "ADMIN"
+                                          ? "Hacer USER"
+                                          : "Hacer ADMIN"}
+                                    </button>
+
+                                    <button
+                                      className={`usuarios-accion usuarios-accion-estado ${
+                                        activo === false ? "activar" : ""
+                                      }`}
+                                      onClick={() => cambiarEstado(usuario)}
+                                      disabled={
+                                        procesando ||
+                                        usuarioProcesando !== null ||
+                                        activo === null
+                                      }
+                                      title="Activar o desactivar usuario"
+                                    >
+                                      {activo === false
+                                        ? "Activar"
+                                        : activo === true
+                                          ? "Desactivar"
+                                          : "Sin estado"}
+                                    </button>
+                                  </>
+                                )}
+                              </div>
                             </td>
                           </tr>
                         );

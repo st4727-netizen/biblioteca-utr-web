@@ -8,20 +8,50 @@ export default function Catalogo() {
   const { logout, user } = useAuth();
   const navigate = useNavigate();
 
+  const esAdmin = user?.rol === "ADMIN";
+
   const [libros, setLibros] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [busqueda, setBusqueda] = useState("");
+
+  // Solicitud de préstamo
   const [libroSeleccionado, setLibroSeleccionado] = useState(null);
   const [fechaDevolucion, setFechaDevolucion] = useState("");
   const [enviando, setEnviando] = useState(false);
 
+  // Registro de libros
+  const [mostrarFormularioLibro, setMostrarFormularioLibro] = useState(false);
+  const [registrandoLibro, setRegistrandoLibro] = useState(false);
+
+  const [nuevoLibro, setNuevoLibro] = useState({
+    isbn: "",
+    titulo: "",
+    autor: "",
+    categoria: "",
+    stockTotal: "1",
+  });
+
+  // Edición de libros
+  const [libroEditando, setLibroEditando] = useState(null);
+  const [editandoLibro, setEditandoLibro] = useState(false);
+
+  const [datosEdicion, setDatosEdicion] = useState({
+    isbn: "",
+    titulo: "",
+    autor: "",
+    categoria: "",
+    stockTotal: "1",
+  });
+
+  // Cargar catálogo
   const cargarLibros = async () => {
     try {
       setLoading(true);
       setError("");
 
       const respuesta = await apiRequest("/api/books");
+
       setLibros(Array.isArray(respuesta) ? respuesta : []);
     } catch (error) {
       setError(error.message || "No fue posible cargar los libros.");
@@ -34,10 +64,151 @@ export default function Catalogo() {
     cargarLibros();
   }, []);
 
+  // Cerrar sesión
   const cerrarSesion = () => {
     logout();
     navigate("/login", { replace: true });
   };
+
+  // ==========================================
+  // REGISTRAR LIBROS
+  // ==========================================
+
+  const handleNuevoLibroChange = (e) => {
+    const { name, value } = e.target;
+
+    setNuevoLibro((anterior) => ({
+      ...anterior,
+      [name]: value,
+    }));
+  };
+
+  const registrarLibro = async (e) => {
+    e.preventDefault();
+
+    if (
+      !nuevoLibro.isbn.trim() ||
+      !nuevoLibro.titulo.trim() ||
+      !nuevoLibro.autor.trim() ||
+      !nuevoLibro.categoria.trim() ||
+      !Number.isInteger(Number(nuevoLibro.stockTotal)) ||
+      Number(nuevoLibro.stockTotal) < 1
+    ) {
+      alert("Completa todos los campos correctamente.");
+      return;
+    }
+
+    try {
+      setRegistrandoLibro(true);
+
+      const respuesta = await apiRequest("/api/books", {
+        method: "POST",
+        body: {
+          isbn: nuevoLibro.isbn.trim(),
+          titulo: nuevoLibro.titulo.trim(),
+          autor: nuevoLibro.autor.trim(),
+          categoria: nuevoLibro.categoria.trim(),
+          stockTotal: Number(nuevoLibro.stockTotal),
+        },
+      });
+
+      alert(respuesta?.message || "¡Libro registrado correctamente!");
+
+      setNuevoLibro({
+        isbn: "",
+        titulo: "",
+        autor: "",
+        categoria: "",
+        stockTotal: "1",
+      });
+
+      setMostrarFormularioLibro(false);
+
+      await cargarLibros();
+    } catch (error) {
+      alert(error.message || "No fue posible registrar el libro.");
+    } finally {
+      setRegistrandoLibro(false);
+    }
+  };
+
+  // ==========================================
+  // EDITAR LIBROS
+  // ==========================================
+
+  const abrirEdicionLibro = (libro) => {
+    setLibroEditando(libro);
+
+    setDatosEdicion({
+      isbn: libro.isbn || "",
+      titulo: libro.titulo || "",
+      autor: libro.autor || "",
+      categoria: libro.categoria || "",
+      stockTotal: String(libro.stockTotal ?? 1),
+    });
+  };
+
+  const handleEdicionChange = (e) => {
+    const { name, value } = e.target;
+
+    setDatosEdicion((anterior) => ({
+      ...anterior,
+      [name]: value,
+    }));
+  };
+
+  const actualizarLibro = async (e) => {
+    e.preventDefault();
+
+    if (!libroEditando) return;
+
+    if (
+      !datosEdicion.isbn.trim() ||
+      !datosEdicion.titulo.trim() ||
+      !datosEdicion.autor.trim() ||
+      !datosEdicion.categoria.trim() ||
+      !Number.isInteger(Number(datosEdicion.stockTotal)) ||
+      Number(datosEdicion.stockTotal) < 1
+    ) {
+      alert("Completa todos los campos correctamente.");
+      return;
+    }
+
+    try {
+      setEditandoLibro(true);
+
+      const respuesta = await apiRequest(
+        `/api/books/${libroEditando.id}`,
+        {
+          method: "PUT",
+          body: {
+            isbn: datosEdicion.isbn.trim(),
+            titulo: datosEdicion.titulo.trim(),
+            autor: datosEdicion.autor.trim(),
+            categoria: datosEdicion.categoria.trim(),
+            stockTotal: Number(datosEdicion.stockTotal),
+          },
+        }
+      );
+
+      alert(respuesta?.message || "Libro actualizado correctamente.");
+
+      setLibroEditando(null);
+
+      await cargarLibros();
+    } catch (error) {
+      alert(
+        error.message ||
+        "No fue posible actualizar el libro. Verifica las existencias."
+      );
+    } finally {
+      setEditandoLibro(false);
+    }
+  };
+
+  // ==========================================
+  // SOLICITAR PRÉSTAMO
+  // ==========================================
 
   const seleccionarLibro = (libro) => {
     setLibroSeleccionado(libro);
@@ -70,6 +241,7 @@ export default function Catalogo() {
 
       setLibroSeleccionado(null);
       setFechaDevolucion("");
+
       await cargarLibros();
     } catch (error) {
       alert(error.message || "No fue posible solicitar el préstamo.");
@@ -77,6 +249,10 @@ export default function Catalogo() {
       setEnviando(false);
     }
   };
+
+  // ==========================================
+  // FILTRAR LIBROS
+  // ==========================================
 
   const librosFiltrados = libros.filter((libro) => {
     const termino = busqueda.toLowerCase();
@@ -87,6 +263,10 @@ export default function Catalogo() {
       (libro.categoria || "").toLowerCase().includes(termino)
     );
   });
+
+  // ==========================================
+  // ESTILOS
+  // ==========================================
 
   const estilos = `
     * {
@@ -259,6 +439,7 @@ export default function Catalogo() {
       align-items: center;
       gap: 15px;
       margin-bottom: 20px;
+      flex-wrap: wrap;
     }
 
     .catalogo-seccion-header h2 {
@@ -308,11 +489,6 @@ export default function Catalogo() {
       flex-direction: column;
       justify-content: space-between;
       color: white;
-      background: linear-gradient(135deg, #2456a5, #102d69);
-    }
-
-    .catalogo-portada:nth-child(4n) {
-      background: linear-gradient(135deg, #438b92, #20535f);
     }
 
     .catalogo-portada span {
@@ -386,6 +562,12 @@ export default function Catalogo() {
       cursor: not-allowed;
     }
 
+    .catalogo-boton-agregar {
+      width: auto;
+      margin: 0;
+      padding: 11px 17px;
+    }
+
     .catalogo-logout {
       margin-top: auto;
       padding: 12px;
@@ -409,11 +591,14 @@ export default function Catalogo() {
       align-items: center;
       padding: 20px;
       background: #07152dcc;
+      overflow-y: auto;
     }
 
     .catalogo-modal {
       width: 100%;
       max-width: 430px;
+      max-height: 90vh;
+      overflow-y: auto;
       padding: 27px;
       border-radius: 10px;
       background: white;
@@ -433,7 +618,7 @@ export default function Catalogo() {
 
     .catalogo-modal label {
       display: block;
-      margin: 20px 0 8px;
+      margin: 15px 0 8px;
       color: #34445e;
       font-size: 13px;
       font-weight: bold;
@@ -444,6 +629,12 @@ export default function Catalogo() {
       padding: 11px;
       border: 1px solid #dce2ed;
       border-radius: 5px;
+      outline: none;
+    }
+
+    .catalogo-modal input:focus {
+      border-color: #376bd0;
+      box-shadow: 0 0 0 3px #376bd018;
     }
 
     .catalogo-modal-acciones {
@@ -452,9 +643,17 @@ export default function Catalogo() {
       margin-top: 18px;
     }
 
+    .catalogo-modal-acciones button {
+      flex: 1;
+    }
+
     .catalogo-cancelar {
       background: #e8edf5;
       color: #34445e;
+    }
+
+    .catalogo-cancelar:hover:not(:disabled) {
+      background: #d8e0ec;
     }
 
     .catalogo-mensaje {
@@ -521,8 +720,16 @@ export default function Catalogo() {
       .catalogo-busqueda {
         max-width: none;
       }
+
+      .catalogo-boton-agregar {
+        width: 100%;
+      }
     }
   `;
+
+  // ==========================================
+  // PANTALLA DE CARGA
+  // ==========================================
 
   if (loading) {
     return (
@@ -535,17 +742,24 @@ export default function Catalogo() {
     );
   }
 
+  // ==========================================
+  // PANTALLA DE ERROR
+  // ==========================================
+
   if (error) {
     return (
       <>
         <style>{estilos}</style>
+
         <main className="catalogo-page">
           <div className="catalogo-mensaje">
             <h2>Error al cargar el catálogo</h2>
             <p role="alert">{error}</p>
+
             <button className="catalogo-boton" onClick={cargarLibros}>
               Reintentar
             </button>
+
             <button className="catalogo-boton" onClick={cerrarSesion}>
               Cerrar sesión
             </button>
@@ -554,6 +768,10 @@ export default function Catalogo() {
       </>
     );
   }
+
+  // ==========================================
+  // INTERFAZ PRINCIPAL
+  // ==========================================
 
   return (
     <>
@@ -568,9 +786,22 @@ export default function Catalogo() {
 
           <nav className="catalogo-menu">
             <button className="activo">▣ Catálogo</button>
+
             <button onClick={() => navigate("/prestamos")}>
               ▤ Mis préstamos
             </button>
+
+            {esAdmin && (
+              <>
+                <button onClick={() => navigate("/dashboard")}>
+                  ▦ Panel administrador
+                </button>
+
+                <button onClick={() => navigate("/gestion-usuarios")}>
+                  ♙ Gestión de usuarios
+                </button>
+              </>
+            )}
           </nav>
 
           <button className="catalogo-logout" onClick={cerrarSesion}>
@@ -586,6 +817,7 @@ export default function Catalogo() {
               <div className="catalogo-avatar">
                 {(user?.nombre || "U").charAt(0).toUpperCase()}
               </div>
+
               <span>{user?.nombre || "Usuario"}</span>
             </div>
           </header>
@@ -593,6 +825,7 @@ export default function Catalogo() {
           <main className="catalogo-contenido">
             <section className="catalogo-bienvenida">
               <h1>Catálogo de libros</h1>
+
               <p>
                 Explora nuestra colección y encuentra tu próximo
                 conocimiento.
@@ -621,6 +854,15 @@ export default function Catalogo() {
             <section className="catalogo-seccion">
               <div className="catalogo-seccion-header">
                 <h2>Explorar colección</h2>
+
+                {esAdmin && (
+                  <button
+                    className="catalogo-boton catalogo-boton-agregar"
+                    onClick={() => setMostrarFormularioLibro(true)}
+                  >
+                    + Agregar libro
+                  </button>
+                )}
 
                 <input
                   className="catalogo-busqueda"
@@ -657,12 +899,25 @@ export default function Catalogo() {
 
                       <div className="catalogo-libro-info">
                         <h3>{libro.titulo}</h3>
-                        <p><strong>Autor:</strong> {libro.autor}</p>
-                        <p><strong>ISBN:</strong> {libro.isbn || "No disponible"}</p>
-                        <p><strong>Categoría:</strong> {libro.categoria || "General"}</p>
+
+                        <p>
+                          <strong>Autor:</strong> {libro.autor}
+                        </p>
+
+                        <p>
+                          <strong>ISBN:</strong>{" "}
+                          {libro.isbn || "No disponible"}
+                        </p>
+
+                        <p>
+                          <strong>Categoría:</strong>{" "}
+                          {libro.categoria || "General"}
+                        </p>
+
                         <p>
                           <strong>Existencias:</strong>{" "}
-                          {libro.stockDisponible} disponibles de {libro.stockTotal}
+                          {libro.stockDisponible} disponibles de{" "}
+                          {libro.stockTotal}
                         </p>
 
                         {libro.stockDisponible > 0 ? (
@@ -684,6 +939,15 @@ export default function Catalogo() {
                             No disponible
                           </span>
                         )}
+
+                        {esAdmin && (
+                          <button
+                            className="catalogo-boton"
+                            onClick={() => abrirEdicionLibro(libro)}
+                          >
+                            ✎ Editar libro
+                          </button>
+                        )}
                       </div>
                     </article>
                   ))}
@@ -692,6 +956,198 @@ export default function Catalogo() {
             </section>
           </main>
         </div>
+
+        {/* =====================================
+            MODAL REGISTRAR LIBRO
+        ===================================== */}
+
+        {esAdmin && mostrarFormularioLibro && (
+          <div className="catalogo-modal-fondo">
+            <section
+              className="catalogo-modal"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="titulo-nuevo-libro"
+            >
+              <h2 id="titulo-nuevo-libro">Registrar nuevo libro</h2>
+
+              <p>Completa los datos para agregar un libro al catálogo.</p>
+
+              <form onSubmit={registrarLibro}>
+                <label htmlFor="isbn">ISBN</label>
+                <input
+                  id="isbn"
+                  name="isbn"
+                  type="text"
+                  placeholder="Ej. 978-0132350884"
+                  value={nuevoLibro.isbn}
+                  onChange={handleNuevoLibroChange}
+                  required
+                />
+
+                <label htmlFor="titulo">Título</label>
+                <input
+                  id="titulo"
+                  name="titulo"
+                  type="text"
+                  placeholder="Nombre del libro"
+                  value={nuevoLibro.titulo}
+                  onChange={handleNuevoLibroChange}
+                  required
+                />
+
+                <label htmlFor="autor">Autor</label>
+                <input
+                  id="autor"
+                  name="autor"
+                  type="text"
+                  placeholder="Nombre del autor"
+                  value={nuevoLibro.autor}
+                  onChange={handleNuevoLibroChange}
+                  required
+                />
+
+                <label htmlFor="categoria">Categoría</label>
+                <input
+                  id="categoria"
+                  name="categoria"
+                  type="text"
+                  placeholder="Ej. Software"
+                  value={nuevoLibro.categoria}
+                  onChange={handleNuevoLibroChange}
+                  required
+                />
+
+                <label htmlFor="stockTotal">Existencias totales</label>
+                <input
+                  id="stockTotal"
+                  name="stockTotal"
+                  type="number"
+                  min="1"
+                  step="1"
+                  value={nuevoLibro.stockTotal}
+                  onChange={handleNuevoLibroChange}
+                  required
+                />
+
+                <div className="catalogo-modal-acciones">
+                  <button
+                    type="submit"
+                    className="catalogo-boton"
+                    disabled={registrandoLibro}
+                  >
+                    {registrandoLibro ? "Registrando..." : "Guardar libro"}
+                  </button>
+
+                  <button
+                    type="button"
+                    className="catalogo-boton catalogo-cancelar"
+                    disabled={registrandoLibro}
+                    onClick={() => setMostrarFormularioLibro(false)}
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              </form>
+            </section>
+          </div>
+        )}
+
+        {/* =====================================
+            MODAL EDITAR LIBRO
+        ===================================== */}
+
+        {esAdmin && libroEditando && (
+          <div className="catalogo-modal-fondo">
+            <section
+              className="catalogo-modal"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="titulo-editar-libro"
+            >
+              <h2 id="titulo-editar-libro">Editar libro</h2>
+
+              <p>Modifica la información del libro seleccionado.</p>
+
+              <form onSubmit={actualizarLibro}>
+                <label htmlFor="editar-isbn">ISBN</label>
+                <input
+                  id="editar-isbn"
+                  name="isbn"
+                  type="text"
+                  value={datosEdicion.isbn}
+                  onChange={handleEdicionChange}
+                  required
+                />
+
+                <label htmlFor="editar-titulo">Título</label>
+                <input
+                  id="editar-titulo"
+                  name="titulo"
+                  type="text"
+                  value={datosEdicion.titulo}
+                  onChange={handleEdicionChange}
+                  required
+                />
+
+                <label htmlFor="editar-autor">Autor</label>
+                <input
+                  id="editar-autor"
+                  name="autor"
+                  type="text"
+                  value={datosEdicion.autor}
+                  onChange={handleEdicionChange}
+                  required
+                />
+
+                <label htmlFor="editar-categoria">Categoría</label>
+                <input
+                  id="editar-categoria"
+                  name="categoria"
+                  type="text"
+                  value={datosEdicion.categoria}
+                  onChange={handleEdicionChange}
+                  required
+                />
+
+                <label htmlFor="editar-stock">Existencias totales</label>
+                <input
+                  id="editar-stock"
+                  name="stockTotal"
+                  type="number"
+                  min="1"
+                  step="1"
+                  value={datosEdicion.stockTotal}
+                  onChange={handleEdicionChange}
+                  required
+                />
+
+                <div className="catalogo-modal-acciones">
+                  <button
+                    type="submit"
+                    className="catalogo-boton"
+                    disabled={editandoLibro}
+                  >
+                    {editandoLibro ? "Guardando..." : "Guardar cambios"}
+                  </button>
+
+                  <button
+                    type="button"
+                    className="catalogo-boton catalogo-cancelar"
+                    disabled={editandoLibro}
+                    onClick={() => setLibroEditando(null)}
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              </form>
+            </section>
+          </div>
+        )}
+
+        {/* =====================================
+            MODAL SOLICITAR PRÉSTAMO
+        ===================================== */}
 
         {libroSeleccionado && (
           <div className="catalogo-modal-fondo">
@@ -702,8 +1158,14 @@ export default function Catalogo() {
               aria-labelledby="titulo-solicitud"
             >
               <h2 id="titulo-solicitud">Solicitar préstamo</h2>
-              <p><strong>Libro:</strong> {libroSeleccionado.titulo}</p>
-              <p><strong>Autor:</strong> {libroSeleccionado.autor}</p>
+
+              <p>
+                <strong>Libro:</strong> {libroSeleccionado.titulo}
+              </p>
+
+              <p>
+                <strong>Autor:</strong> {libroSeleccionado.autor}
+              </p>
 
               <form onSubmit={solicitarPrestamo}>
                 <label htmlFor="fechaDevolucion">
